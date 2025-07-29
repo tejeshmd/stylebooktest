@@ -506,5 +506,3 @@ components:
                 properties:
                   servicename: $parent.properties.servicename
                   monitor_name: $components.gslb-monitor-comp.properties.monitorname
-				  
-				 
