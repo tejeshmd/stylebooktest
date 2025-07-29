@@ -1,6 +1,6 @@
 name: multicloud-glb
 namespace: com.citrix.adc.stylebooks
-version: "1.2"
+version: "1.3"
 display-name: Multi-cloud GLB StyleBook
 description: |
     This StyleBook is used to configure GLB for NetScaler instances that are deployed as GLB nodes on multiple cloud and on-premises data centres. This StyleBook can also be used to configure GLB nodes in hierarchical deployments.
@@ -497,7 +497,7 @@ components:
                   name: $components.gslb-backupvserver-comp.properties.name
                   servicename: $parent.properties.servicename
                   weight: $backup-service.weight
-		  monitor_name: $components.gslb-monitor-comp.properties.monitorname
+                  
             - 
                 name: gslb-backupservice-monitor-binding-comp
                 type: ns::gslbservice_lbmonitor_binding
@@ -507,4 +507,4 @@ components:
                   servicename: $parent.properties.servicename
                   monitor_name: $components.gslb-monitor-comp.properties.monitorname
 				  
-				  
+				 
