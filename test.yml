@@ -497,6 +497,7 @@ components:
                   name: $components.gslb-backupvserver-comp.properties.name
                   servicename: $parent.properties.servicename
                   weight: $backup-service.weight
+		  monitor_name: $components.gslb-monitor-comp.properties.monitorname
             - 
                 name: gslb-backupservice-monitor-binding-comp
                 type: ns::gslbservice_lbmonitor_binding
