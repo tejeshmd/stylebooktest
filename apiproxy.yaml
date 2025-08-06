@@ -1,0 +1,418 @@
+name: api-proxy
+namespace: com.citrix.adc.apisec.stylebooks
+version: "1.2"
+description: "StyleBook creates API Proxy configuration. Support for create multiple policies of same policy type"
+display-name: "API Proxy Stylebook"
+schema-version: "1.0"
+
+import-stylebooks:
+  -
+    namespace: netscaler.nitro.config
+    prefix: ns
+    version: "13.0"
+  -
+    namespace: com.citrix.adc.apisec.commontypes
+    prefix: apiseccmtypes
+    version: "1.1"
+  -
+    namespace: com.citrix.adc.apisec.stylebooks
+    prefix: apisec
+    version: "1.1"
+  -
+    namespace: com.citrix.adc.stylebooks
+    prefix: stlbv1
+    version: "1.0"
+  -
+    namespace: com.citrix.adc.stylebooks
+    prefix: stlbv11
+    version: "1.1"
+  -
+    namespace: com.citrix.adc.commontypes
+    prefix: cmtypes
+    version: "1.0"
+
+parameters:
+  -
+    name: api-proxy-appname
+    label: API Proxy Name
+    description: Name for API proxy
+    type: string
+    required: true
+    max-length: 32
+  -
+    name: basepath
+    label: API Basepath
+    description: API Basepath
+    type: string
+    default: "/"
+    required: true
+  -
+    name: ip
+    label: API Proxy IP address
+    description: The IP address for the API proxy
+    type: ipaddress
+    dynamic-allocation: true
+    required: true
+  -
+    name: port
+    label: API Proxy Port
+    description: API Proxy Port
+    type: tcp-port
+    default: 443
+    required: true
+    gui:
+      updatable: false
+  -
+    name: cert-name
+    label: Certificate Name
+    description: Certificate Name
+    type: string
+  -
+    name: cert-file
+    label: Certificate File
+    description: Location of the certificate file
+    type: certfile
+  -
+    name: key-name
+    label: Certificate Key Name
+    description: Certificate Key Name
+    type: string
+  -
+    name: key-file
+    label: Certificate Key File
+    description: Location of the certificate key file
+    type: keyfile
+  -
+    name: cert-password
+    label: "Private Key Password"
+    description: "Passphrase that was used to encrypt the private-key. Use this option to load encrypted private-keys in PEM format."
+    type: password
+  -
+    name: certstore
+    label: Certificate Store
+    description: "Certificate Store"
+    type: certkey
+  -
+    name: ssl-inform
+    label: CertKey Format
+    description: Input format of the certificate and the private-key files.
+    type: string
+    allowed-values:
+      - PEM
+      - DER
+  -
+    name: ssl-profile
+    label: TLS Security Profile
+    description: TLS Security Profile
+    type: string
+    allowed-values:
+      - High Security
+      - Medium Security
+    default: High Security
+  -
+    name: defalut-service
+    label: Default Service
+    description: Default Service
+    type: object
+    parameters:
+      -
+        name: svc-service-type
+        label: Default API Server Protocol
+        description: API Server Protocol
+        type: string
+        default: HTTP
+        allowed-values:
+          - HTTP
+          - SSL
+      -
+        name: api-server-domain
+        type: object
+        label: Default API Server FQDN Name
+        description: Default API Server FQDN Name
+        parameters:
+          -
+            name: domain
+            label: Default API Server Domain Name
+            description: Default API Server Domain Name
+            type: string
+            required: true
+          -
+            name: port
+            label: Default API Server Port
+            description: Default TCP port of a server
+            type: tcp-port
+            default: 80
+      -
+        name: svc-servers
+        label: Default API Server IPs
+        description: Default API Server IPs
+        type: cmtypes::server-ip-port-params[]
+
+  -
+    name: cs-routes
+    label: API Proxy Routes
+    description: API Proxy Routes
+    type: apiseccmtypes::api-cs-routes-params[]
+
+substitutions:
+  certificate-data-with-passwd:
+    -
+      cert-name: $parameters.cert-name
+      cert-file: $parameters.cert-file
+      ssl-inform: $parameters.ssl-inform
+      key-name: $parameters.key-name
+      key-file: $parameters.key-file
+      cert-password: $parameters.cert-password
+  certificate-data-without-passwd:
+    -
+      cert-name: $parameters.cert-name
+      cert-file: $parameters.cert-file
+      ssl-inform: $parameters.ssl-inform
+      key-name: $parameters.key-name
+      key-file: $parameters.key-file
+  certificate-data: if-then-else(exists($parameters.cert-password), $substitutions.certificate-data-with-passwd, $substitutions.certificate-data-without-passwd)
+  non-default-lbvservers-name(lb-appname): $substitutions.api-proxy-name-handling + "-" + $lb-appname + "-lb"
+  lbname-in-pool(idx): str("lb") + str($idx)
+  content-switch-policy-name(name): str("HTTP.REQ.URL.PATH.STARTSWITH_ANY(\"") + $name + str("\")")
+  patset-name(name): $name + "_pp"
+  responder-priority(priority): 10 + (10 * $priority)
+  route-name(idx): $substitutions.api-proxy-name-handling + "_route_" + str($idx)
+  lbv-with-auth-propertites(vsname):
+    auth-params:
+      authentication-http-401: "ON"
+      authentication-vserver-name: $vsname
+  lbv-without-auth-propertites:
+    auth-params:
+      authentication-http-401: "OFF"
+  lb-auth-handler(exist, name): if-then-else($exist, $substitutions.lbv-with-auth-propertites($name), $substitutions.lbv-without-auth-propertites)
+  api-proxy-name-handling: str(apigw_) + replace(replace(replace(replace(replace(replace($parameters.api-proxy-appname, "-", "_"), "#", "_"), "@", "_"), ".", "_"), ":", "_"), "=", "_")
+  svc-domains(domain, port):
+    -
+      domain: $domain
+      port: $port
+  cs-service-type: "SSL"
+  cs-virtual-port: 80
+  default-lb-pool:
+    lb-appname: $substitutions.api-proxy-name-handling + "-default-lb"
+    lb-service-type: "HTTP"
+    lb-virtual-ip: 0.0.0.0
+    lb-virtual-port: 0
+    svc-service-type: $parameters.defalut-service.svc-service-type
+    svc-servers: $parameters.defalut-service.svc-servers
+    svc-server-domains: if-then-else(exists($parameters.defalut-service.api-server-domain), $substitutions.svc-domains($parameters.defalut-service.api-server-domain.domain, $parameters.defalut-service.api-server-domain.port))
+  cs-route-patset-item(route): if-then-else($parameters.basepath == str('/'), str(''), $parameters.basepath) + str($route)
+  responder-policy(responder-with-htmlpage-policy-name, responder-drop-or-reset-policy-name, responder-policy-name): if-then-else(exists($responder-policy-name), $responder-policy-name, if-then-else(exists($responder-drop-or-reset-policy-name), responder-drop-or-reset-policy-name, $responder-with-htmlpage-policy-name))
+components:
+  -
+    name: enable-features-comp
+    type: ns::nsfeature
+    description: Enables the NetScaler features needed for API Gateway
+    meta-properties:
+      action: enable
+    properties:
+      feature: ["APIGateway", "CS", "LB", "SSL", "SSLVPN"]
+  -
+    name: cs-patset-comp
+    type: ns::policypatset
+    description: This component is used to create patset for content switch rule
+    condition: $parameters.cs-routes
+    repeat:
+      repeat-list: $parameters.cs-routes
+      repeat-item: cs-route
+      repeat-index: idx
+    properties:
+      name: $substitutions.patset-name($substitutions.route-name($idx))
+    components:
+      -
+        name: cs-patset-bind-comp
+        type: ns::policypatset_pattern_binding
+        condition: $cs-route.routes
+        repeat: $cs-route.routes
+        repeat-item: route
+        properties:
+          name: $parent.properties.name
+          String: $substitutions.cs-route-patset-item(str($route))
+      -
+        name: api-security-features-comp
+        type: apisec::api-security-features
+        condition: $cs-route.api-security-features
+        properties:
+          pg-name: $substitutions.route-name($idx)
+          basepath: $parameters.basepath
+          authentication?: $cs-route.api-security-features.authentication
+          throttling?: $cs-route.api-security-features.throttling
+          appfw?: $cs-route.api-security-features.appfw
+          bot?: $cs-route.api-security-features.bot
+          rewrite?: $cs-route.api-security-features.rewrite
+          path-rewrite?: $cs-route.api-security-features.path-rewrite
+          authorization?: $cs-route.api-security-features.authorization
+          deny?: $cs-route.api-security-features.deny
+          api-proxy-appname: $substitutions.api-proxy-name-handling + str(_)
+      -
+        name: cs-lb-mon-comp
+        type: stlbv11::cs-lb-mon
+        description: This component is used to create content switch server
+        properties:
+          appname: $substitutions.api-proxy-name-handling
+          cs-virtual-ip: $parameters.ip
+          cs-virtual-port: $parameters.port
+          cs-service-type: $substitutions.cs-service-type
+          default-lb-pool?: if-then-else($parameters.defalut-service, $substitutions.default-lb-pool)
+          certificates?: if-then-else(not $parameters.certstore, $substitutions.certificate-data)
+          pools:
+            -
+              rule: $substitutions.content-switch-policy-name($parent.properties.name)
+              priority: $idx + 1
+              lb-pool:
+                lb-appname: $substitutions.lbname-in-pool($idx)
+                lb-service-type: "HTTP"
+                lb-virtual-ip: 0.0.0.0
+                lb-virtual-port: 0
+                svc-service-type: $cs-route.svc-service-type
+                svc-server-domains?: if-then-else(exists($cs-route.api-server-domain), $substitutions.svc-domains($cs-route.api-server-domain.domain, $cs-route.api-server-domain.port))
+                svc-servers?: $cs-route.svc-servers
+                lb-advanced: $substitutions.lb-auth-handler(exists($parent.components.api-security-features-comp) and exists($parent.components.api-security-features-comp.outputs.auth-vserver-name), $parent.components.api-security-features-comp.outputs.auth-vserver-name)
+        components:
+          -
+            name: csvserver-certstore-bindings
+            type: stlbv1::vserver-certstore-binds
+            description: "This component is used for uploading and binding certificates from CertStore to ssl vserver"
+            condition: $parameters.certstore and $parent.outputs.csvserver
+            properties:
+              vserver-name: $parent.outputs.csvserver.properties.name
+              certificate: $parameters.certstore
+          -
+            name: ssl-profile-bind-comp
+            type: ns::sslvserver
+            condition: $parent.outputs.csvserver
+            description: This component is used to bind ssl profile to cs vserver
+            properties:
+              vservername: $parent.outputs.csvserver.properties.name
+              sslprofile?: if-then-else($parameters.ssl-profile == 'High Security', ns_default_ssl_profile_secure_frontend, ns_default_ssl_profile_frontend)
+      -
+        name: lb-responder-bind-comp
+        type: ns::lbvserver_responderpolicy_binding
+        description: This component is used to bind ratelimit policy to lb vserver
+        condition: $parent.components.api-security-features-comp.outputs.api-throttling-priorities and $parent.components.api-security-features-comp.outputs.api-throttling-policy-names
+        repeat:
+          repeat-list: $parent.components.api-security-features-comp.outputs.api-throttling-priorities
+          repeat-item: priority
+          repeat-index: policy-idx
+        properties:
+          name: $substitutions.non-default-lbvservers-name($substitutions.lbname-in-pool($idx))
+          priority: $priority
+          policyname: $parent.components.api-security-features-comp.outputs.api-throttling-policy-names[$policy-idx]
+      -
+        name: lb-responder-deny-bind-comp
+        type: ns::lbvserver_responderpolicy_binding
+        description: This component is used to bind deny policy to lb vserver
+        condition: $parent.components.api-security-features-comp.outputs.api-deny-priorities and $parent.components.api-security-features-comp.outputs.api-deny-policy-names
+        repeat:
+          repeat-list: $parent.components.api-security-features-comp.outputs.api-deny-priorities
+          repeat-item: priority
+          repeat-index: policy-idx
+        properties:
+          name: $substitutions.non-default-lbvservers-name($substitutions.lbname-in-pool($idx))
+          priority: $priority
+          policyname: $parent.components.api-security-features-comp.outputs.api-deny-policy-names[$policy-idx]
+      -
+        name: lb-appfw-bind-comp
+        type: ns::lbvserver_appfwpolicy_binding
+        description: This component is used to bind appfw policy to lb vserver
+        condition: $parent.components.api-security-features-comp.outputs.api-appfw-priorities and $parent.components.api-security-features-comp.outputs.api-appfw-policy-names
+        repeat:
+          repeat-list: $parent.components.api-security-features-comp.outputs.api-appfw-priorities
+          repeat-item: priority
+          repeat-index: policy-idx
+        properties:
+          name: $substitutions.non-default-lbvservers-name($substitutions.lbname-in-pool($idx))
+          priority: $priority
+          policyname: $parent.components.api-security-features-comp.outputs.api-appfw-policy-names[$policy-idx]
+      -
+        name: lb-bot-bind-comp
+        type: ns::lbvserver_botpolicy_binding
+        description: This component is used to bind bot policy to lb vserver
+        condition: $parent.components.api-security-features-comp.outputs.api-bot-priorities and $parent.components.api-security-features-comp.outputs.api-bot-policy-names
+        repeat:
+          repeat-list: $parent.components.api-security-features-comp.outputs.api-bot-priorities
+          repeat-item: priority
+          repeat-index: policy-idx
+        properties:
+          name: $substitutions.non-default-lbvservers-name($substitutions.lbname-in-pool($idx))
+          priority: $priority
+          policyname: $parent.components.api-security-features-comp.outputs.api-bot-policy-names[$policy-idx]
+      -
+        name: lb-rewrite-bind-comp
+        type: ns::lbvserver_rewritepolicy_binding
+        description: This component is used to bind rewrite policy to lb vserver
+        condition: $parent.components.api-security-features-comp.outputs.api-rewrite-priorities and $parent.components.api-security-features-comp.outputs.api-rewrite-policy-names
+        repeat:
+          repeat-list: $parent.components.api-security-features-comp.outputs.api-rewrite-priorities
+          repeat-item: priority
+          repeat-index: policy-idx
+        properties:
+          name: $substitutions.non-default-lbvservers-name($substitutions.lbname-in-pool($idx))
+          priority: $priority
+          policyname: $parent.components.api-security-features-comp.outputs.api-rewrite-policy-names[$policy-idx]
+          bindpoint: REQUEST
+          gotopriorityexpression: NEXT
+      -
+        name: lb-path-rewrite-bind-comp
+        type: ns::lbvserver_rewritepolicy_binding
+        description: This component is used to bind path rewrite policy to lb vserver
+        condition: $parent.components.api-security-features-comp.outputs.api-path-rewrite-priorities and $parent.components.api-security-features-comp.outputs.api-path-rewrite-policy-names
+        repeat:
+          repeat-list: $parent.components.api-security-features-comp.outputs.api-path-rewrite-priorities
+          repeat-item: priority
+          repeat-index: policy-idx
+        properties:
+          name: $substitutions.non-default-lbvservers-name($substitutions.lbname-in-pool($idx))
+          priority: $priority
+          policyname: $parent.components.api-security-features-comp.outputs.api-path-rewrite-policy-names[$policy-idx]
+          bindpoint: REQUEST
+          gotopriorityexpression: NEXT
+      -
+        name: lb-authorization-bind-comp
+        type: ns::lbvserver_authorizationpolicy_binding
+        description: This component is used to bind authorization policy to lb vserver
+        condition: $parent.components.api-security-features-comp.outputs.api-authorization-priorities and $parent.components.api-security-features-comp.outputs.api-authorization-policy-names
+        repeat:
+          repeat-list: $parent.components.api-security-features-comp.outputs.api-authorization-priorities
+          repeat-item: priority
+          repeat-index: policy-idx
+        properties:
+          name: $substitutions.non-default-lbvservers-name($substitutions.lbname-in-pool($idx))
+          priority: $priority
+          policyname: $parent.components.api-security-features-comp.outputs.api-authorization-policy-names[$policy-idx]
+          bindpoint: REQUEST
+          gotopriorityexpression: END
+
+  -
+    name: cs-lb-mon-comp
+    type: stlbv11::cs-lb-mon
+    condition: not $parameters.cs-routes
+    description: This component is used to create content switch server no routes input
+    properties:
+      appname: $substitutions.api-proxy-name-handling
+      cs-virtual-ip: $parameters.ip
+      cs-virtual-port: $parameters.port
+      cs-service-type: $substitutions.cs-service-type
+      default-lb-pool?: if-then-else($parameters.defalut-service, $substitutions.default-lb-pool)
+      certificates?: if-then-else(not $parameters.certstore, $substitutions.certificate-data)
+    components:
+      -
+        name: csvserver-certstore-bindings
+        type: stlbv1::vserver-certstore-binds
+        description: "This component is used for uploading and binding certificates from CertStore to ssl vserver"
+        condition: $parameters.certstore and $parent.outputs.csvserver
+        properties:
+          vserver-name: $parent.outputs.csvserver.properties.name
+          certificate: $parameters.certstore
+      -
+        name: ssl-profile-bind-comp
+        type: ns::sslvserver
+        condition: $parent.outputs.csvserver
+        description: This component is used to bind ssl profile to cs vserver
+        properties:
+          vservername: $parent.outputs.csvserver.properties.name
+          sslprofile?: if-then-else($parameters.ssl-profile == 'High Security', ns_default_ssl_profile_secure_frontend, ns_default_ssl_profile_frontend)
